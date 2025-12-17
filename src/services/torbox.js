@@ -16,13 +16,17 @@ async function addMagnetToTorbox(magnetLink, userApiKey) {
   }
   
   try {
+    const FormData = require('form-data');
+    const form = new FormData();
+    form.append('magnet', magnetLink);
+    
     const response = await axios.post(
       `${TORBOX_API_BASE}/torrents/createtorrent`,
-      { magnet: magnetLink },
+      form,
       {
         headers: {
           'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
+          ...form.getHeaders(),
         },
         timeout: 30000,
       }
