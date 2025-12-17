@@ -1,6 +1,7 @@
 const cacheService = require('../services/cache');
 const torboxService = require('../services/torbox');
 const omdbService = require('../services/omdb');
+const parser = require('../utils/parser');
 
 function normalizeTitle(title) {
   if (!title) return '';
@@ -55,12 +56,15 @@ function filterByQuality(magnets, qualities) {
 
 function getQualityRank(quality) {
   const q = (quality || '').toLowerCase();
-  if (q.includes('2160') || q.includes('4k')) return 4;
-  if (q.includes('1080')) return 3;
-  if (q.includes('720')) return 2;
-  if (q.includes('480')) return 1;
+  if (q.includes('2160') || q.includes('4k')) return 5;
+  if (q.includes('1080')) return 4;
+  if (q.includes('720')) return 3;
+  if (q.includes('480')) return 2;
+  if (q.includes('cam') || q.includes('hdts') || q.includes('predvd')) return 1;
   return 0;
 }
+
+
 
 async function getStreams(type, id, userConfig = {}) {
   try {
@@ -136,10 +140,13 @@ async function getStreams(type, id, userConfig = {}) {
     console.log(`[Stream] Processing ${matchingMagnets.length} matching magnets for ${id}`);
     
     const streams = [];
-    const useTorbox = userConfig.debridProvider !== 'none';
+    const useTorbox = userConfig.debridProvider === 'torbox' && userConfig.torboxKey;
     
-    for (const magnet of matchingMagnets.slice(0, Math.min(maxResults, 10))) {
+    for (const magnet of matchingMagnets.slice(0, Math.min(maxResults, 15))) {
       if (!magnet.hash) continue;
+      
+      const streamName = parser.formatStreamName(magnet);
+      const streamTitle = parser.formatStreamTitle(magnet);
       
       if (useTorbox) {
         try {
@@ -152,8 +159,8 @@ async function getStreams(type, id, userConfig = {}) {
           if (torboxStreams && torboxStreams.length > 0) {
             for (const stream of torboxStreams) {
               streams.push({
-                name: `TorBox\n${magnet.parsed?.quality || 'Unknown'}`,
-                title: `${magnet.name || magnet.title || 'Unknown'}\n${stream.title}`,
+                name: parser.formatTorBoxStreamName(magnet),
+                title: `${streamTitle}\n📁 ${stream.title}`,
                 url: stream.url,
                 behaviorHints: {
                   bingeGroup: `torbox-${magnet.hash}`,
@@ -161,23 +168,25 @@ async function getStreams(type, id, userConfig = {}) {
                 },
               });
             }
+            continue;
           }
         } catch (error) {
           console.error(`[Stream] Error getting TorBox stream for ${magnet.hash}:`, error.message);
         }
       }
       
-      if (streams.length === 0 || !useTorbox) {
-        if (magnet.magnet && magnet.hash) {
-          streams.push({
-            name: `Magnet\n${magnet.parsed?.quality || 'Unknown'}`,
-            title: magnet.name || magnet.title || 'Unknown',
-            infoHash: magnet.hash,
-            behaviorHints: {
-              bingeGroup: `magnet-${magnet.hash}`,
-            },
-          });
-        }
+      if (magnet.magnet && magnet.hash) {
+        streams.push({
+          name: streamName,
+          title: streamTitle,
+          infoHash: magnet.hash,
+          sources: magnet.magnet.match(/tr=([^\&]+)/g)?.map(tr => 
+            decodeURIComponent(tr.replace('tr=', ''))
+          ) || [],
+          behaviorHints: {
+            bingeGroup: `torrent-${magnet.hash}`,
+          },
+        });
       }
       
       if (streams.length >= maxResults) break;

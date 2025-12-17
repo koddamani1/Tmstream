@@ -6,6 +6,14 @@ const { scrapeTamilblasters } = require('./src/scrapers/tamilblasters');
 
 const PORT = process.env.PORT || 5000;
 
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[Server] Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('[Server] Uncaught Exception:', error);
+});
+
 async function initialScrape() {
   console.log('[Server] Running initial scrape...');
   try {
