@@ -140,53 +140,40 @@ async function getStreams(type, id, userConfig = {}) {
     console.log(`[Stream] Processing ${matchingMagnets.length} matching magnets for ${id}`);
     
     const streams = [];
-    const useTorbox = userConfig.debridProvider === 'torbox' && userConfig.torboxKey;
+    const torboxKey = userConfig.torboxKey;
+    
+    if (!torboxKey) {
+      console.log('[Stream] No TorBox API key configured - no streams available');
+      return { streams: [] };
+    }
     
     for (const magnet of matchingMagnets.slice(0, Math.min(maxResults, 15))) {
       if (!magnet.hash) continue;
       
-      const streamName = parser.formatStreamName(magnet);
       const streamTitle = parser.formatStreamTitle(magnet);
       
-      if (useTorbox) {
-        try {
-          const torboxStreams = await torboxService.getStreamFromMagnet(
-            magnet.magnet, 
-            magnet.hash,
-            userConfig.torboxKey
-          );
-          
-          if (torboxStreams && torboxStreams.length > 0) {
-            for (const stream of torboxStreams) {
-              streams.push({
-                name: parser.formatTorBoxStreamName(magnet),
-                title: `${streamTitle}\n📁 ${stream.title}`,
-                url: stream.url,
-                behaviorHints: {
-                  bingeGroup: `torbox-${magnet.hash}`,
-                  notWebReady: false,
-                },
-              });
-            }
-            continue;
+      try {
+        const torboxStreams = await torboxService.getStreamFromMagnet(
+          magnet.magnet, 
+          magnet.hash,
+          torboxKey
+        );
+        
+        if (torboxStreams && torboxStreams.length > 0) {
+          for (const stream of torboxStreams) {
+            streams.push({
+              name: parser.formatTorBoxStreamName(magnet),
+              title: `${streamTitle}\n📁 ${stream.title}`,
+              url: stream.url,
+              behaviorHints: {
+                bingeGroup: `torbox-${magnet.hash}`,
+                notWebReady: false,
+              },
+            });
           }
-        } catch (error) {
-          console.error(`[Stream] Error getting TorBox stream for ${magnet.hash}:`, error.message);
         }
-      }
-      
-      if (magnet.magnet && magnet.hash) {
-        streams.push({
-          name: streamName,
-          title: streamTitle,
-          infoHash: magnet.hash,
-          sources: magnet.magnet.match(/tr=([^\&]+)/g)?.map(tr => 
-            decodeURIComponent(tr.replace('tr=', ''))
-          ) || [],
-          behaviorHints: {
-            bingeGroup: `torrent-${magnet.hash}`,
-          },
-        });
+      } catch (error) {
+        console.error(`[Stream] Error getting TorBox stream for ${magnet.hash}:`, error.message);
       }
       
       if (streams.length >= maxResults) break;

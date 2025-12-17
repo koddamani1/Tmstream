@@ -32,18 +32,10 @@
 
         <form id="config-form">
           <div class="form-group">
-            <label>Debrid Provider</label>
-            <select id="debrid-provider">
-              <option value="torbox">TorBox</option>
-              <option value="none">None (Magnet Links Only)</option>
-            </select>
-          </div>
-
-          <div class="form-group" id="torbox-key-group">
-            <label>TorBox API Key (Optional - uses default if empty)</label>
-            <input type="text" id="torbox-key" placeholder="Enter your TorBox API key">
+            <label>TorBox API Key (Required)</label>
+            <input type="text" id="torbox-key" placeholder="Enter your TorBox API key" required>
             <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 8px;">
-              Get your API key from <a href="https://torbox.app" target="_blank" style="color: var(--secondary);">torbox.app</a>
+              Get your API key from <a href="https://torbox.app" target="_blank" style="color: var(--secondary);">torbox.app</a> - All streams go through TorBox for direct playback.
             </p>
           </div>
 
@@ -180,7 +172,6 @@
         .map(cb => cb.value);
       const languages = Array.from(document.querySelectorAll('input[name="language"]:checked'))
         .map(cb => cb.value);
-      const debridProvider = document.getElementById('debrid-provider').value;
       const torboxKey = document.getElementById('torbox-key').value;
       const maxResults = document.getElementById('max-results').value;
       
@@ -188,7 +179,6 @@
         catalogs,
         qualities,
         languages,
-        debridProvider,
         torboxKey: torboxKey || '',
         maxResults: parseInt(maxResults)
       };
@@ -207,11 +197,6 @@
     
     document.querySelectorAll('input, select').forEach(el => {
       el.addEventListener('change', updateManifestUrl);
-    });
-    
-    document.getElementById('debrid-provider').addEventListener('change', function() {
-      const torboxGroup = document.getElementById('torbox-key-group');
-      torboxGroup.style.display = this.value === 'torbox' ? 'block' : 'none';
     });
     
     document.getElementById('install-btn').addEventListener('click', function() {
