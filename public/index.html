@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tamil Movies & Series - Stremio Addon</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="icon" type="image/png" href="https://upload.wikimedia.org/wikipedia/commons/thumb/a/a7/Tamil_Nadu_emblem.svg/200px-Tamil_Nadu_emblem.svg.png">
+</head>
+<body>
+  <header>
+    <div class="container header-content">
+      <a href="/" class="logo">
+        <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/a/a7/Tamil_Nadu_emblem.svg/200px-Tamil_Nadu_emblem.svg.png" alt="Logo">
+        <h1>Tamil Movies & Series</h1>
+      </a>
+      <nav class="nav-links">
+        <a href="/">Home</a>
+        <a href="/configure">Configure</a>
+        <a href="/health">Health</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="container">
+        <h1>Stream Tamil Movies & Series</h1>
+        <p>A powerful Stremio addon that brings you the latest Tamil movies, series, and Hollywood content with multi-audio support. Powered by TorBox for high-quality streaming.</p>
+        <div class="btn-group" style="justify-content: center;">
+          <a href="/configure" class="btn btn-primary">Configure Addon</a>
+          <a href="#features" class="btn btn-secondary">Learn More</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="stats">
+      <div class="container">
+        <div class="stats-grid" id="stats-grid">
+          <div class="stat-item">
+            <h3 id="stat-movies">--</h3>
+            <p>Movies</p>
+          </div>
+          <div class="stat-item">
+            <h3 id="stat-series">--</h3>
+            <p>Series</p>
+          </div>
+          <div class="stat-item">
+            <h3 id="stat-magnets">--</h3>
+            <p>Total Streams</p>
+          </div>
+          <div class="stat-item">
+            <h3 id="stat-sources">2</h3>
+            <p>Sources</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="features" id="features">
+      <div class="container">
+        <h2>Features</h2>
+        <div class="features-grid">
+          <div class="feature-card">
+            <div class="feature-icon">🎬</div>
+            <h3>Tamil Content</h3>
+            <p>Access the latest Tamil movies, web series, and TV shows from 1TamilMV and 1TamilBlasters sources.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">🌍</div>
+            <h3>Multi-Audio</h3>
+            <p>Hollywood movies with Tamil, Hindi, Telugu, and English audio tracks for your convenience.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">🎥</div>
+            <h3>HD Quality</h3>
+            <p>Stream in 720p, 1080p, and 4K quality. Filter by quality preference in configuration.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">⚡</div>
+            <h3>TorBox Integration</h3>
+            <p>Powered by TorBox for fast, reliable streaming without buffering issues.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">📺</div>
+            <h3>Web Series</h3>
+            <p>Complete web series and TV show episodes organized by season for easy browsing.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">🔄</div>
+            <h3>Auto Updates</h3>
+            <p>Content automatically updates every 10-30 minutes with the latest releases.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>Tamil Movies & Series Addon for Stremio</p>
+      <p style="margin-top: 10px;">
+        <a href="/manifest.json">Manifest</a> &bull;
+        <a href="/health">Health Check</a> &bull;
+        <a href="/configure">Configure</a>
+      </p>
+    </div>
+  </footer>
+
+  <script>
+    fetch('/health')
+      .then(res => res.json())
+      .then(data => {
+        document.getElementById('stat-movies').textContent = data.cache?.rssItems || 0;
+        document.getElementById('stat-series').textContent = data.cache?.tamilblastersItems || 0;
+        document.getElementById('stat-magnets').textContent = data.cache?.totalMagnets || 0;
+      })
+      .catch(() => {});
+  </script>
+</body>
+</html>

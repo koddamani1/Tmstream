@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Configure - Tamil Movies & Series Addon</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="icon" type="image/png" href="https://upload.wikimedia.org/wikipedia/commons/thumb/a/a7/Tamil_Nadu_emblem.svg/200px-Tamil_Nadu_emblem.svg.png">
+</head>
+<body>
+  <header>
+    <div class="container header-content">
+      <a href="/" class="logo">
+        <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/a/a7/Tamil_Nadu_emblem.svg/200px-Tamil_Nadu_emblem.svg.png" alt="Logo">
+        <h1>Tamil Movies & Series</h1>
+      </a>
+      <nav class="nav-links">
+        <a href="/">Home</a>
+        <a href="/configure">Configure</a>
+        <a href="/health">Health</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="config-section">
+      <div class="config-card">
+        <h2>Configure Your Addon</h2>
+        <p style="color: var(--text-muted); margin-bottom: 30px;">
+          Customize your streaming experience by selecting your preferred content types and quality settings.
+        </p>
+
+        <form id="config-form">
+          <div class="form-group">
+            <label>Debrid Provider</label>
+            <select id="debrid-provider">
+              <option value="torbox">TorBox</option>
+              <option value="none">None (Magnet Links Only)</option>
+            </select>
+          </div>
+
+          <div class="form-group" id="torbox-key-group">
+            <label>TorBox API Key (Optional - uses default if empty)</label>
+            <input type="text" id="torbox-key" placeholder="Enter your TorBox API key">
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 8px;">
+              Get your API key from <a href="https://torbox.app" target="_blank" style="color: var(--secondary);">torbox.app</a>
+            </p>
+          </div>
+
+          <div class="form-group">
+            <label>Select Catalogs</label>
+            <div class="catalogs-list">
+              <label class="catalog-item">
+                <input type="checkbox" name="catalog" value="tamil-movies" checked>
+                <div class="catalog-info">
+                  <div class="catalog-name">Tamil Movies</div>
+                  <div class="catalog-desc">Latest Tamil movie releases</div>
+                </div>
+              </label>
+              <label class="catalog-item">
+                <input type="checkbox" name="catalog" value="tamil-movies-hd" checked>
+                <div class="catalog-info">
+                  <div class="catalog-name">Tamil HD Movies</div>
+                  <div class="catalog-desc">High quality 1080p and 4K releases</div>
+                </div>
+              </label>
+              <label class="catalog-item">
+                <input type="checkbox" name="catalog" value="hollywood-multi" checked>
+                <div class="catalog-info">
+                  <div class="catalog-name">Hollywood (Multi Audio)</div>
+                  <div class="catalog-desc">Hollywood movies with Tamil/Hindi audio</div>
+                </div>
+              </label>
+              <label class="catalog-item">
+                <input type="checkbox" name="catalog" value="tamil-series" checked>
+                <div class="catalog-info">
+                  <div class="catalog-name">Tamil Series</div>
+                  <div class="catalog-desc">Web series and TV shows</div>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Quality Filter</label>
+            <div class="checkbox-group">
+              <label class="checkbox-item">
+                <input type="checkbox" name="quality" value="4k" checked>
+                4K / 2160p
+              </label>
+              <label class="checkbox-item">
+                <input type="checkbox" name="quality" value="1080p" checked>
+                1080p
+              </label>
+              <label class="checkbox-item">
+                <input type="checkbox" name="quality" value="720p" checked>
+                720p
+              </label>
+              <label class="checkbox-item">
+                <input type="checkbox" name="quality" value="480p">
+                480p
+              </label>
+              <label class="checkbox-item">
+                <input type="checkbox" name="quality" value="cam">
+                CAM/HDTS
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Language Preference</label>
+            <div class="checkbox-group">
+              <label class="checkbox-item">
+                <input type="checkbox" name="language" value="tamil" checked>
+                Tamil
+              </label>
+              <label class="checkbox-item">
+                <input type="checkbox" name="language" value="telugu" checked>
+                Telugu
+              </label>
+              <label class="checkbox-item">
+                <input type="checkbox" name="language" value="hindi" checked>
+                Hindi
+              </label>
+              <label class="checkbox-item">
+                <input type="checkbox" name="language" value="english" checked>
+                English
+              </label>
+              <label class="checkbox-item">
+                <input type="checkbox" name="language" value="malayalam" checked>
+                Malayalam
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Max Results Per Stream Request</label>
+            <select id="max-results">
+              <option value="5">5 streams</option>
+              <option value="10" selected>10 streams</option>
+              <option value="20">20 streams</option>
+              <option value="50">50 streams</option>
+            </select>
+          </div>
+
+          <div class="install-section">
+            <label style="display: block; margin-bottom: 15px; font-weight: 600; color: var(--secondary);">
+              Your Manifest URL
+            </label>
+            <div class="manifest-url" id="manifest-url">
+              Loading...
+            </div>
+            <div class="btn-group">
+              <button type="button" class="btn btn-primary" id="install-btn">
+                Install in Stremio
+              </button>
+              <button type="button" class="btn btn-secondary" id="copy-btn">
+                Copy URL
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>Tamil Movies & Series Addon for Stremio</p>
+    </div>
+  </footer>
+
+  <script>
+    const baseUrl = window.location.origin;
+    
+    function getConfig() {
+      const catalogs = Array.from(document.querySelectorAll('input[name="catalog"]:checked'))
+        .map(cb => cb.value);
+      const qualities = Array.from(document.querySelectorAll('input[name="quality"]:checked'))
+        .map(cb => cb.value);
+      const languages = Array.from(document.querySelectorAll('input[name="language"]:checked'))
+        .map(cb => cb.value);
+      const debridProvider = document.getElementById('debrid-provider').value;
+      const torboxKey = document.getElementById('torbox-key').value;
+      const maxResults = document.getElementById('max-results').value;
+      
+      return {
+        catalogs,
+        qualities,
+        languages,
+        debridProvider,
+        torboxKey: torboxKey || '',
+        maxResults: parseInt(maxResults)
+      };
+    }
+    
+    function encodeConfig(config) {
+      return btoa(JSON.stringify(config));
+    }
+    
+    function updateManifestUrl() {
+      const config = getConfig();
+      const encoded = encodeConfig(config);
+      const manifestUrl = `${baseUrl}/${encoded}/manifest.json`;
+      document.getElementById('manifest-url').textContent = manifestUrl;
+    }
+    
+    document.querySelectorAll('input, select').forEach(el => {
+      el.addEventListener('change', updateManifestUrl);
+    });
+    
+    document.getElementById('debrid-provider').addEventListener('change', function() {
+      const torboxGroup = document.getElementById('torbox-key-group');
+      torboxGroup.style.display = this.value === 'torbox' ? 'block' : 'none';
+    });
+    
+    document.getElementById('install-btn').addEventListener('click', function() {
+      const config = getConfig();
+      const encoded = encodeConfig(config);
+      const manifestUrl = `${baseUrl}/${encoded}/manifest.json`;
+      window.location.href = `stremio://${manifestUrl.replace(/^https?:\/\//, '')}`;
+    });
+    
+    document.getElementById('copy-btn').addEventListener('click', function() {
+      const manifestUrl = document.getElementById('manifest-url').textContent;
+      navigator.clipboard.writeText(manifestUrl).then(() => {
+        this.textContent = 'Copied!';
+        setTimeout(() => {
+          this.textContent = 'Copy URL';
+        }, 2000);
+      });
+    });
+    
+    updateManifestUrl();
+  </script>
+</body>
+</html>

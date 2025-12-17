@@ -35,9 +35,37 @@ function findMatchingMagnets(title, year, allMagnets) {
   });
 }
 
-async function getStreams(type, id) {
+function filterByQuality(magnets, qualities) {
+  if (!qualities || qualities.length === 0) return magnets;
+  
+  return magnets.filter(magnet => {
+    const quality = (magnet.parsed?.quality || magnet.name || '').toLowerCase();
+    
+    for (const q of qualities) {
+      if (q === '4k' && (quality.includes('2160') || quality.includes('4k'))) return true;
+      if (q === '1080p' && quality.includes('1080')) return true;
+      if (q === '720p' && quality.includes('720')) return true;
+      if (q === '480p' && quality.includes('480')) return true;
+      if (q === 'cam' && (quality.includes('cam') || quality.includes('hdts'))) return true;
+    }
+    
+    return false;
+  });
+}
+
+function getQualityRank(quality) {
+  const q = (quality || '').toLowerCase();
+  if (q.includes('2160') || q.includes('4k')) return 4;
+  if (q.includes('1080')) return 3;
+  if (q.includes('720')) return 2;
+  if (q.includes('480')) return 1;
+  return 0;
+}
+
+async function getStreams(type, id, userConfig = {}) {
   try {
     const allMagnets = cacheService.getAllMagnets();
+    const maxResults = userConfig.maxResults || 10;
     
     if (!allMagnets || allMagnets.length === 0) {
       console.log('[Stream] No magnets available in cache');
@@ -92,36 +120,54 @@ async function getStreams(type, id) {
       return { streams: [] };
     }
     
-    console.log(`[Stream] Processing ${matchingMagnets.length} matching magnets for ${id}`);
-    
-    const streams = [];
-    
-    for (const magnet of matchingMagnets.slice(0, 5)) {
-      if (!magnet.hash) continue;
-      
-      try {
-        const torboxStreams = await torboxService.getStreamFromMagnet(magnet.magnet, magnet.hash);
-        
-        if (torboxStreams && torboxStreams.length > 0) {
-          for (const stream of torboxStreams) {
-            streams.push({
-              name: `TorBox\n${magnet.parsed?.quality || 'Unknown'}`,
-              title: `${magnet.name || magnet.title || 'Unknown'}\n${stream.title}`,
-              url: stream.url,
-              behaviorHints: {
-                bingeGroup: `torbox-${magnet.hash}`,
-                notWebReady: false,
-              },
-            });
-          }
-        }
-      } catch (error) {
-        console.error(`[Stream] Error getting TorBox stream for ${magnet.hash}:`, error.message);
+    if (userConfig.qualities && userConfig.qualities.length > 0) {
+      const filtered = filterByQuality(matchingMagnets, userConfig.qualities);
+      if (filtered.length > 0) {
+        matchingMagnets = filtered;
       }
     }
     
-    if (streams.length === 0) {
-      for (const magnet of matchingMagnets.slice(0, 5)) {
+    matchingMagnets.sort((a, b) => {
+      const qualityA = getQualityRank(a.parsed?.quality);
+      const qualityB = getQualityRank(b.parsed?.quality);
+      return qualityB - qualityA;
+    });
+    
+    console.log(`[Stream] Processing ${matchingMagnets.length} matching magnets for ${id}`);
+    
+    const streams = [];
+    const useTorbox = userConfig.debridProvider !== 'none';
+    
+    for (const magnet of matchingMagnets.slice(0, Math.min(maxResults, 10))) {
+      if (!magnet.hash) continue;
+      
+      if (useTorbox) {
+        try {
+          const torboxStreams = await torboxService.getStreamFromMagnet(
+            magnet.magnet, 
+            magnet.hash,
+            userConfig.torboxKey
+          );
+          
+          if (torboxStreams && torboxStreams.length > 0) {
+            for (const stream of torboxStreams) {
+              streams.push({
+                name: `TorBox\n${magnet.parsed?.quality || 'Unknown'}`,
+                title: `${magnet.name || magnet.title || 'Unknown'}\n${stream.title}`,
+                url: stream.url,
+                behaviorHints: {
+                  bingeGroup: `torbox-${magnet.hash}`,
+                  notWebReady: false,
+                },
+              });
+            }
+          }
+        } catch (error) {
+          console.error(`[Stream] Error getting TorBox stream for ${magnet.hash}:`, error.message);
+        }
+      }
+      
+      if (streams.length === 0 || !useTorbox) {
         if (magnet.magnet && magnet.hash) {
           streams.push({
             name: `Magnet\n${magnet.parsed?.quality || 'Unknown'}`,
@@ -133,10 +179,12 @@ async function getStreams(type, id) {
           });
         }
       }
+      
+      if (streams.length >= maxResults) break;
     }
     
     console.log(`[Stream] Returning ${streams.length} streams for ${id}`);
-    return { streams };
+    return { streams: streams.slice(0, maxResults) };
     
   } catch (error) {
     console.error(`[Stream] Error getting streams for ${id}:`, error.message);

@@ -1,5 +1,6 @@
 const express = require('express');
-const { getManifest } = require('../src/stremio/manifest');
+const path = require('path');
+const { getManifest, getConfiguredManifest } = require('../src/stremio/manifest');
 const { getCatalog, getMeta } = require('../src/stremio/catalog');
 const { getStreams } = require('../src/stremio/stream');
 const { scrapeRssFeeds } = require('../src/scrapers/rss');
@@ -12,6 +13,7 @@ app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Cache-Control', 'no-cache, no-store, must-revalidate');
   if (req.method === 'OPTIONS') {
     return res.sendStatus(200);
   }
@@ -19,6 +21,7 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json());
+app.use(express.static(path.join(__dirname, '../public')));
 
 let lastRssScrape = 0;
 let lastTamilblastersScrape = 0;
@@ -41,16 +44,45 @@ async function ensureDataFresh() {
   }
 }
 
+function parseUserConfig(configStr) {
+  try {
+    const decoded = Buffer.from(configStr, 'base64').toString('utf-8');
+    return JSON.parse(decoded);
+  } catch (error) {
+    return null;
+  }
+}
+
+function getDefaultConfig() {
+  return {
+    catalogs: ['tamil-movies', 'tamil-movies-hd', 'hollywood-multi', 'tamil-series'],
+    qualities: ['4k', '1080p', '720p'],
+    languages: ['tamil', 'telugu', 'hindi', 'english', 'malayalam'],
+    debridProvider: 'torbox',
+    torboxKey: '',
+    maxResults: 10
+  };
+}
+
 app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, '../public/index.html'));
+});
+
+app.get('/configure', (req, res) => {
+  res.sendFile(path.join(__dirname, '../public/configure.html'));
+});
+
+app.get('/api-info', (req, res) => {
   res.json({
     name: 'Tamil Movies & Series Stremio Addon',
     version: '1.0.0',
     description: 'Stremio addon for Tamil movies and series via TorBox',
     endpoints: {
       manifest: '/manifest.json',
-      catalog: '/catalog/:type/:id.json',
-      meta: '/meta/:type/:id.json',
-      stream: '/stream/:type/:id.json',
+      configuredManifest: '/:config/manifest.json',
+      catalog: '/:config/catalog/:type/:id.json',
+      meta: '/:config/meta/:type/:id.json',
+      stream: '/:config/stream/:type/:id.json',
     },
   });
 });
@@ -59,18 +91,41 @@ app.get('/manifest.json', (req, res) => {
   res.json(getManifest());
 });
 
+app.get('/:config/manifest.json', (req, res) => {
+  const userConfig = parseUserConfig(req.params.config) || getDefaultConfig();
+  res.json(getConfiguredManifest(userConfig));
+});
+
 app.get('/catalog/:type/:id.json', async (req, res) => {
   try {
     await ensureDataFresh();
-    
     const { type, id } = req.params;
+    const extra = {};
+    if (req.query.skip) extra.skip = req.query.skip;
+    if (req.query.genre) extra.genre = req.query.genre;
+    if (req.query.search) extra.search = req.query.search;
+    
+    const result = await getCatalog(type, id, extra, getDefaultConfig());
+    res.json(result);
+  } catch (error) {
+    console.error('[API] Catalog error:', error.message);
+    res.json({ metas: [] });
+  }
+});
+
+app.get('/:config/catalog/:type/:id.json', async (req, res) => {
+  try {
+    await ensureDataFresh();
+    
+    const { config, type, id } = req.params;
+    const userConfig = parseUserConfig(config) || getDefaultConfig();
     const extra = {};
     
     if (req.query.skip) extra.skip = req.query.skip;
     if (req.query.genre) extra.genre = req.query.genre;
     if (req.query.search) extra.search = req.query.search;
     
-    const result = await getCatalog(type, id, extra);
+    const result = await getCatalog(type, id, extra, userConfig);
     res.json(result);
   } catch (error) {
     console.error('[API] Catalog error:', error.message);
@@ -89,12 +144,37 @@ app.get('/meta/:type/:id.json', async (req, res) => {
   }
 });
 
+app.get('/:config/meta/:type/:id.json', async (req, res) => {
+  try {
+    const { type, id } = req.params;
+    const result = await getMeta(type, id);
+    res.json(result);
+  } catch (error) {
+    console.error('[API] Meta error:', error.message);
+    res.json({ meta: null });
+  }
+});
+
 app.get('/stream/:type/:id.json', async (req, res) => {
   try {
     await ensureDataFresh();
-    
     const { type, id } = req.params;
-    const result = await getStreams(type, id);
+    const result = await getStreams(type, id, getDefaultConfig());
+    res.json(result);
+  } catch (error) {
+    console.error('[API] Stream error:', error.message);
+    res.json({ streams: [] });
+  }
+});
+
+app.get('/:config/stream/:type/:id.json', async (req, res) => {
+  try {
+    await ensureDataFresh();
+    
+    const { config, type, id } = req.params;
+    const userConfig = parseUserConfig(config) || getDefaultConfig();
+    
+    const result = await getStreams(type, id, userConfig);
     res.json(result);
   } catch (error) {
     console.error('[API] Stream error:', error.message);

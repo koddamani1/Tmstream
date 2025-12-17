@@ -4,14 +4,24 @@ const cacheService = require('./cache');
 
 const TORBOX_API_BASE = 'https://api.torbox.app/v1/api';
 
-async function addMagnetToTorbox(magnetLink) {
+function getApiKey(userKey) {
+  return userKey || config.TORBOX_API_KEY;
+}
+
+async function addMagnetToTorbox(magnetLink, userApiKey) {
+  const apiKey = getApiKey(userApiKey);
+  if (!apiKey) {
+    console.log('[TorBox] No API key available');
+    return null;
+  }
+  
   try {
     const response = await axios.post(
       `${TORBOX_API_BASE}/torrents/createtorrent`,
       { magnet: magnetLink },
       {
         headers: {
-          'Authorization': `Bearer ${config.TORBOX_API_KEY}`,
+          'Authorization': `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
         },
         timeout: 30000,
@@ -25,13 +35,16 @@ async function addMagnetToTorbox(magnetLink) {
   }
 }
 
-async function getTorrentInfo(torrentId) {
+async function getTorrentInfo(torrentId, userApiKey) {
+  const apiKey = getApiKey(userApiKey);
+  if (!apiKey) return null;
+  
   try {
     const response = await axios.get(
       `${TORBOX_API_BASE}/torrents/mylist`,
       {
         headers: {
-          'Authorization': `Bearer ${config.TORBOX_API_KEY}`,
+          'Authorization': `Bearer ${apiKey}`,
         },
         timeout: 30000,
       }
@@ -48,13 +61,16 @@ async function getTorrentInfo(torrentId) {
   }
 }
 
-async function requestDownloadLink(torrentId, fileId) {
+async function requestDownloadLink(torrentId, fileId, userApiKey) {
+  const apiKey = getApiKey(userApiKey);
+  if (!apiKey) return null;
+  
   try {
     const response = await axios.get(
       `${TORBOX_API_BASE}/torrents/requestdl`,
       {
         params: {
-          token: config.TORBOX_API_KEY,
+          token: apiKey,
           torrent_id: torrentId,
           file_id: fileId,
         },
@@ -69,17 +85,23 @@ async function requestDownloadLink(torrentId, fileId) {
   }
 }
 
-async function getStreamFromMagnet(magnetLink, magnetHash) {
+async function getStreamFromMagnet(magnetLink, magnetHash, userApiKey) {
   const cached = cacheService.getTorboxStream(magnetHash);
   if (cached) {
     console.log(`[TorBox] Using cached stream for ${magnetHash}`);
     return cached;
   }
   
+  const apiKey = getApiKey(userApiKey);
+  if (!apiKey) {
+    console.log('[TorBox] No API key available, skipping');
+    return null;
+  }
+  
   try {
     console.log(`[TorBox] Processing magnet: ${magnetHash}`);
     
-    const addResult = await addMagnetToTorbox(magnetLink);
+    const addResult = await addMagnetToTorbox(magnetLink, userApiKey);
     
     if (!addResult?.data?.torrent_id) {
       console.error('[TorBox] Failed to add magnet to TorBox');
@@ -90,7 +112,7 @@ async function getStreamFromMagnet(magnetLink, magnetHash) {
     
     await new Promise(resolve => setTimeout(resolve, 2000));
     
-    const torrentInfo = await getTorrentInfo(torrentId);
+    const torrentInfo = await getTorrentInfo(torrentId, userApiKey);
     
     if (!torrentInfo || !torrentInfo.files || torrentInfo.files.length === 0) {
       console.log('[TorBox] No files found in torrent yet');
@@ -110,7 +132,7 @@ async function getStreamFromMagnet(magnetLink, magnetHash) {
     const streams = [];
     
     for (const file of videoFiles.slice(0, 5)) {
-      const downloadLink = await requestDownloadLink(torrentId, file.id);
+      const downloadLink = await requestDownloadLink(torrentId, file.id, userApiKey);
       
       if (downloadLink) {
         streams.push({
@@ -136,13 +158,13 @@ async function getStreamFromMagnet(magnetLink, magnetHash) {
   }
 }
 
-async function getStreamsForContent(magnets) {
+async function getStreamsForContent(magnets, userApiKey) {
   const streams = [];
   
   for (const magnet of magnets.slice(0, 5)) {
     if (!magnet.hash) continue;
     
-    const magnetStreams = await getStreamFromMagnet(magnet.magnet, magnet.hash);
+    const magnetStreams = await getStreamFromMagnet(magnet.magnet, magnet.hash, userApiKey);
     
     if (magnetStreams && magnetStreams.length > 0) {
       streams.push(...magnetStreams.map(s => ({
