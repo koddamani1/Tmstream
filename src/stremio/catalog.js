@@ -1,12 +1,12 @@
 const cacheService = require('../services/cache');
 const omdbService = require('../services/omdb');
 const fanartService = require('../services/fanart');
-const torboxService = require('../services/torbox');
+const database = require('../services/database');
 
 function matchesQualityFilter(item, qualities) {
   if (!qualities || qualities.length === 0) return true;
   
-  const quality = (item.parsed?.quality || '').toLowerCase();
+  const quality = (item.parsed?.quality || item.quality || '').toLowerCase();
   
   for (const q of qualities) {
     if (q === '4k' && (quality.includes('2160') || quality.includes('4k'))) return true;
@@ -23,7 +23,7 @@ function matchesLanguageFilter(item, languages) {
   if (!languages || languages.length === 0) return true;
   
   const title = (item.title || '').toLowerCase();
-  const name = (item.parsed?.cleanTitle || '').toLowerCase();
+  const name = (item.clean_title || item.parsed?.cleanTitle || '').toLowerCase();
   const category = (item.category || '').toLowerCase();
   const combined = `${title} ${name} ${category}`;
   
@@ -38,159 +38,83 @@ async function getCatalog(type, id, extra = {}, userConfig = {}) {
   const skip = parseInt(extra.skip) || 0;
   const limit = 100;
   
-  const rssContent = cacheService.getRssContent();
-  const tamilblastersContent = cacheService.getTamilblastersContent();
-  
-  let items = [...rssContent, ...tamilblastersContent];
-  
-  if (type === 'movie') {
-    items = items.filter(item => item.parsed?.type === 'movie');
-  } else if (type === 'series') {
-    items = items.filter(item => item.parsed?.type === 'series');
-  }
-  
-  if (id === 'tamil-movies-hd') {
-    items = items.filter(item => 
-      item.category === 'web-hd' || 
-      item.category === 'hd-rips' ||
-      (item.parsed?.quality && ['1080p', '2160p', '4K', 'BluRay'].some(q => 
-        item.parsed.quality.toLowerCase().includes(q.toLowerCase())
-      ))
-    );
-  } else if (id === 'hollywood-multi') {
-    items = items.filter(item => item.category === 'hollywood-multi');
-  } else if (id === 'tamil-series') {
-    items = items.filter(item => 
-      item.category === 'series' || 
-      item.parsed?.type === 'series'
-    );
-  }
-  
-  if (userConfig.qualities && userConfig.qualities.length > 0) {
-    items = items.filter(item => matchesQualityFilter(item, userConfig.qualities));
-  }
-  
-  if (userConfig.languages && userConfig.languages.length > 0) {
-    items = items.filter(item => matchesLanguageFilter(item, userConfig.languages));
-  }
-  
-  if (extra.search) {
-    const searchTerm = extra.search.toLowerCase();
-    items = items.filter(item => 
-      item.title?.toLowerCase().includes(searchTerm) ||
-      item.parsed?.cleanTitle?.toLowerCase().includes(searchTerm)
-    );
-  }
-  
-  const seen = new Set();
-  items = items.filter(item => {
-    const key = item.parsed?.cleanTitle?.toLowerCase() || item.title?.toLowerCase();
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-  
-  items.sort((a, b) => {
-    const dateA = new Date(a.pubDate || 0);
-    const dateB = new Date(b.pubDate || 0);
-    return dateB - dateA;
-  });
-  
-  const paginatedItems = items.slice(skip, skip + limit);
-  const torboxKey = userConfig.torboxKey;
-  
-  // Filter items that have TorBox streams available
-  const itemsWithTorbox = [];
-  
-  for (const item of paginatedItems) {
-    if (!item.magnets || item.magnets.length === 0) continue;
+  try {
+    const dbContent = await database.getContentWithTorboxStreams(type, id, limit, skip);
     
-    // Check if any magnet has a TorBox stream
-    let hasTorboxStream = false;
-    
-    for (const magnet of item.magnets.slice(0, 3)) {
-      if (!magnet.hash) continue;
+    if (dbContent && dbContent.length > 0) {
+      console.log(`[Catalog] Found ${dbContent.length} items with TorBox streams in database`);
       
-      try {
-        // Check memory cache first
-        const cached = cacheService.getTorboxStream(magnet.hash);
-        if (cached) {
-          hasTorboxStream = true;
-          break;
-        }
+      let items = dbContent;
+      
+      if (userConfig.qualities && userConfig.qualities.length > 0) {
+        items = items.filter(item => matchesQualityFilter(item, userConfig.qualities));
+      }
+      
+      if (userConfig.languages && userConfig.languages.length > 0) {
+        items = items.filter(item => matchesLanguageFilter(item, userConfig.languages));
+      }
+      
+      if (extra.search) {
+        const searchTerm = extra.search.toLowerCase();
+        items = items.filter(item => 
+          item.title?.toLowerCase().includes(searchTerm) ||
+          item.clean_title?.toLowerCase().includes(searchTerm)
+        );
+      }
+      
+      const metas = await Promise.all(items.map(async (item) => {
+        const internalId = item.imdb_id || `tamilmv:${Buffer.from(item.title || '').toString('base64').slice(0, 30)}`;
         
-        // Check if it's cached on TorBox servers
-        if (torboxKey) {
-          const torboxCached = await torboxService.checkTorboxCache(magnet.hash, torboxKey);
-          if (torboxCached) {
-            hasTorboxStream = true;
-            break;
+        const meta = {
+          id: internalId,
+          type: item.type || type,
+          name: item.clean_title || item.title || 'Unknown',
+          poster: item.poster || null,
+          background: item.background || null,
+          description: `Source: ${item.source}\nCategory: ${item.category}`,
+          releaseInfo: item.year ? String(item.year) : '',
+        };
+        
+        if (!meta.poster && item.clean_title && item.year) {
+          try {
+            const searchResults = await omdbService.searchByTitle(
+              item.clean_title, 
+              item.year,
+              item.type
+            );
+            
+            if (searchResults.length > 0) {
+              const match = searchResults[0];
+              meta.id = match.imdbID;
+              meta.name = match.Title;
+              meta.poster = match.Poster !== 'N/A' ? match.Poster : null;
+              meta.releaseInfo = match.Year;
+              
+              const fanart = await fanartService.getMovieImages(match.imdbID);
+              if (fanart) {
+                if (fanart.poster && !meta.poster) meta.poster = fanart.poster;
+                if (fanart.background) meta.background = fanart.background;
+              }
+            }
+          } catch (error) {
           }
         }
-      } catch (err) {
-        // Continue checking other magnets
-      }
+        
+        if (!meta.poster) {
+          meta.poster = 'https://via.placeholder.com/270x400/1a0033/e0aaff?text=' + encodeURIComponent(meta.name.slice(0, 15));
+        }
+        
+        return meta;
+      }));
+      
+      return { metas };
     }
-    
-    if (hasTorboxStream) {
-      itemsWithTorbox.push(item);
-    }
+  } catch (error) {
+    console.error('[Catalog] Database error:', error.message);
   }
   
-  console.log(`[Catalog] Found ${itemsWithTorbox.length}/${paginatedItems.length} items with TorBox streams`);
-  
-  const metas = await Promise.all(itemsWithTorbox.map(async (item) => {
-    const internalId = `tamilmv:${Buffer.from(item.title || '').toString('base64').slice(0, 30)}`;
-    
-    const meta = {
-      id: internalId,
-      type: item.parsed?.type || type,
-      name: item.parsed?.cleanTitle || item.title || 'Unknown',
-      poster: null,
-      background: null,
-      description: `Source: ${item.source}\nCategory: ${item.category}\nQuality: ${item.parsed?.quality || 'Unknown'}`,
-      releaseInfo: item.parsed?.year || '',
-    };
-    
-    if (item.parsed?.cleanTitle && item.parsed?.year) {
-      try {
-        const searchResults = await omdbService.searchByTitle(
-          item.parsed.cleanTitle, 
-          item.parsed.year,
-          item.parsed.type
-        );
-        
-        if (searchResults.length > 0) {
-          const match = searchResults[0];
-          meta.id = match.imdbID;
-          meta.name = match.Title;
-          meta.poster = match.Poster !== 'N/A' ? match.Poster : null;
-          meta.releaseInfo = match.Year;
-          
-          cacheService.addImdbMagnetMapping(match.imdbID, item.magnets, item.title, item.parsed.year);
-          
-          const fanart = await fanartService.getMovieImages(match.imdbID);
-          if (fanart) {
-            if (fanart.poster && !meta.poster) meta.poster = fanart.poster;
-            if (fanart.background) meta.background = fanart.background;
-          }
-        }
-      } catch (error) {
-      }
-    }
-    
-    if (meta.id === internalId && item.magnets?.length > 0) {
-      cacheService.addImdbMagnetMapping(internalId, item.magnets, item.title, item.parsed?.year);
-    }
-    
-    if (!meta.poster) {
-      meta.poster = 'https://via.placeholder.com/270x400/1a0033/e0aaff?text=' + encodeURIComponent(meta.name.slice(0, 15));
-    }
-    
-    return meta;
-  }));
-  
-  return { metas };
+  console.log('[Catalog] No TorBox streams in database, returning empty catalog');
+  return { metas: [] };
 }
 
 async function getMeta(type, id) {

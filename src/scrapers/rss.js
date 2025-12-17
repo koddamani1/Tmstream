@@ -3,6 +3,7 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const config = require('../../config');
 const cacheService = require('../services/cache');
+const database = require('../services/database');
 
 const parser = new Parser({
   timeout: 30000,
@@ -130,7 +131,48 @@ async function scrapeRssFeeds() {
   cacheService.setRssContent(allItems);
   updateMagnetsCache();
   
+  await saveToDatabase(allItems);
+  
   return allItems;
+}
+
+async function saveToDatabase(items) {
+  let savedContent = 0;
+  let savedMagnets = 0;
+  
+  for (const item of items) {
+    try {
+      const contentId = await database.upsertContent({
+        title: item.title,
+        cleanTitle: item.parsed?.cleanTitle || null,
+        year: item.parsed?.year ? parseInt(item.parsed.year) : null,
+        type: item.parsed?.type || 'movie',
+        category: item.category || null,
+        source: item.source || 'unknown',
+        pubDate: item.pubDate ? new Date(item.pubDate) : null,
+      });
+      
+      if (contentId) {
+        savedContent++;
+        
+        for (const magnet of item.magnets) {
+          if (magnet.hash) {
+            await database.upsertMagnet(contentId, {
+              magnet: magnet.magnet,
+              hash: magnet.hash,
+              name: magnet.name || item.title,
+              quality: item.parsed?.quality || null,
+            });
+            savedMagnets++;
+          }
+        }
+      }
+    } catch (error) {
+      console.error(`[RSS] Error saving to database: ${error.message}`);
+    }
+  }
+  
+  console.log(`[RSS] Saved ${savedContent} content items and ${savedMagnets} magnets to database`);
 }
 
 function getCategoryFromUrl(url) {

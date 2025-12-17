@@ -2,6 +2,7 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const config = require('../../config');
 const cacheService = require('../services/cache');
+const database = require('../services/database');
 const { parseTitle, extractMagnetsFromPage, updateMagnetsCache } = require('./rss');
 
 async function scrapeTamilblasters() {
@@ -111,7 +112,48 @@ async function scrapeTamilblasters() {
   cacheService.setTamilblastersContent(allItems);
   updateMagnetsCache();
   
+  await saveToDatabase(allItems);
+  
   return allItems;
+}
+
+async function saveToDatabase(items) {
+  let savedContent = 0;
+  let savedMagnets = 0;
+  
+  for (const item of items) {
+    try {
+      const contentId = await database.upsertContent({
+        title: item.title,
+        cleanTitle: item.parsed?.cleanTitle || null,
+        year: item.parsed?.year ? parseInt(item.parsed.year) : null,
+        type: item.parsed?.type || 'movie',
+        category: item.category || null,
+        source: item.source || 'tamilblasters',
+        pubDate: null,
+      });
+      
+      if (contentId) {
+        savedContent++;
+        
+        for (const magnet of item.magnets) {
+          if (magnet.hash) {
+            await database.upsertMagnet(contentId, {
+              magnet: magnet.magnet,
+              hash: magnet.hash,
+              name: magnet.name || item.title,
+              quality: item.parsed?.quality || null,
+            });
+            savedMagnets++;
+          }
+        }
+      }
+    } catch (error) {
+      console.error(`[TamilBlasters] Error saving to database: ${error.message}`);
+    }
+  }
+  
+  console.log(`[TamilBlasters] Saved ${savedContent} content items and ${savedMagnets} magnets to database`);
 }
 
 module.exports = {
