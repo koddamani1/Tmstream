@@ -193,7 +193,12 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
   }
 });
 
-app.get('/health', (req, res) => {
+app.get('/health', async (req, res) => {
+  // Ensure data is loaded on Vercel
+  if (isVercel) {
+    await ensureDataFresh();
+  }
+  
   const rssContent = cacheService.getRssContent();
   const tamilblastersContent = cacheService.getTamilblastersContent();
   const allMagnets = cacheService.getAllMagnets();
