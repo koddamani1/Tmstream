@@ -257,4 +257,25 @@ app.get('/export-cache', (req, res) => {
   res.json(exportData);
 });
 
+app.get('/debug', async (req, res) => {
+  const debug = {
+    isVercel: isVercel,
+    scrapingServerUrl: process.env.SCRAPING_SERVER_URL || 'NOT SET',
+    cacheStats: cacheService.getCacheStats ? cacheService.getCacheStats() : 'N/A',
+  };
+  
+  // Try to load data
+  if (isVercel) {
+    try {
+      await ensureDataFresh();
+      debug.dataLoadAttempt = 'SUCCESS';
+    } catch (error) {
+      debug.dataLoadAttempt = 'FAILED';
+      debug.error = error.message;
+    }
+  }
+  
+  res.json(debug);
+});
+
 module.exports = app;
