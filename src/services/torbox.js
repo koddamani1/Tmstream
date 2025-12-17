@@ -47,6 +47,9 @@ async function getTorrentInfo(torrentId, userApiKey) {
     const response = await axios.get(
       `${TORBOX_API_BASE}/torrents/mylist`,
       {
+        params: {
+          bypass_cache: true,
+        },
         headers: {
           'Authorization': `Bearer ${apiKey}`,
         },
@@ -61,6 +64,38 @@ async function getTorrentInfo(torrentId, userApiKey) {
     return null;
   } catch (error) {
     console.error('[TorBox] Error getting torrent info:', error.response?.data || error.message);
+    return null;
+  }
+}
+
+async function findExistingTorrent(magnetHash, userApiKey) {
+  const apiKey = getApiKey(userApiKey);
+  if (!apiKey) return null;
+  
+  try {
+    const response = await axios.get(
+      `${TORBOX_API_BASE}/torrents/mylist`,
+      {
+        params: {
+          bypass_cache: true,
+        },
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        timeout: 30000,
+      }
+    );
+    
+    if (response.data?.data) {
+      // Find torrent by hash
+      return response.data.data.find(t => 
+        t.hash && t.hash.toLowerCase() === magnetHash.toLowerCase()
+      );
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('[TorBox] Error finding existing torrent:', error.message);
     return null;
   }
 }
@@ -89,6 +124,33 @@ async function requestDownloadLink(torrentId, fileId, userApiKey) {
   }
 }
 
+async function checkTorboxCache(magnetHash, userApiKey) {
+  const apiKey = getApiKey(userApiKey);
+  if (!apiKey) return null;
+  
+  try {
+    // Check if torrent is already cached on TorBox
+    const response = await axios.get(
+      `${TORBOX_API_BASE}/torrents/checkcached`,
+      {
+        params: {
+          hash: magnetHash,
+          format: 'object',
+        },
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        timeout: 10000,
+      }
+    );
+    
+    return response.data?.data?.[magnetHash];
+  } catch (error) {
+    console.error('[TorBox] Error checking cache:', error.message);
+    return null;
+  }
+}
+
 async function getStreamFromMagnet(magnetLink, magnetHash, userApiKey) {
   const cached = cacheService.getTorboxStream(magnetHash);
   if (cached) {
@@ -103,23 +165,44 @@ async function getStreamFromMagnet(magnetLink, magnetHash, userApiKey) {
   }
   
   try {
-    console.log(`[TorBox] Processing magnet: ${magnetHash}`);
+    // First check if we already have this torrent
+    const existingTorrent = await findExistingTorrent(magnetHash, userApiKey);
     
-    const addResult = await addMagnetToTorbox(magnetLink, userApiKey);
+    let torrentId;
+    let torrentInfo;
     
-    if (!addResult?.data?.torrent_id) {
-      console.error('[TorBox] Failed to add magnet to TorBox');
-      return null;
+    if (existingTorrent) {
+      console.log(`[TorBox] Found existing torrent ${magnetHash} (ID: ${existingTorrent.id})`);
+      torrentId = existingTorrent.id;
+      torrentInfo = existingTorrent;
+    } else {
+      // Check if torrent is cached on TorBox servers
+      const cacheCheck = await checkTorboxCache(magnetHash, userApiKey);
+      
+      if (!cacheCheck || !cacheCheck.cached) {
+        console.log(`[TorBox] Torrent ${magnetHash} not in your account and not cached on TorBox`);
+        return null;
+      }
+      
+      console.log(`[TorBox] Torrent ${magnetHash} is cached on TorBox! Adding...`);
+      
+      const addResult = await addMagnetToTorbox(magnetLink, userApiKey);
+      
+      if (!addResult?.data?.torrent_id) {
+        console.error('[TorBox] Failed to add magnet to TorBox');
+        return null;
+      }
+      
+      torrentId = addResult.data.torrent_id;
+      
+      // Wait for TorBox to process
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
+      torrentInfo = await getTorrentInfo(torrentId, userApiKey);
     }
     
-    const torrentId = addResult.data.torrent_id;
-    
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    const torrentInfo = await getTorrentInfo(torrentId, userApiKey);
-    
     if (!torrentInfo || !torrentInfo.files || torrentInfo.files.length === 0) {
-      console.log('[TorBox] No files found in torrent yet');
+      console.log('[TorBox] No files found in torrent');
       return null;
     }
     
@@ -152,6 +235,7 @@ async function getStreamFromMagnet(magnetLink, magnetHash, userApiKey) {
     
     if (streams.length > 0) {
       cacheService.setTorboxStream(magnetHash, streams);
+      console.log(`[TorBox] ✅ Generated ${streams.length} stream(s) for ${magnetHash}`);
     }
     
     return streams;
@@ -187,4 +271,6 @@ module.exports = {
   requestDownloadLink,
   getStreamFromMagnet,
   getStreamsForContent,
+  checkTorboxCache,
+  findExistingTorrent,
 };
