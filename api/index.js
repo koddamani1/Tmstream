@@ -5,7 +5,12 @@ const { getCatalog, getMeta } = require('../src/stremio/catalog');
 const { getStreams } = require('../src/stremio/stream');
 const { scrapeRssFeeds } = require('../src/scrapers/rss');
 const { scrapeTamilblasters } = require('../src/scrapers/tamilblasters');
-const cacheService = require('../src/services/cache');
+
+// Use Vercel-compatible cache service
+const isVercel = process.env.VERCEL === '1';
+const cacheService = isVercel 
+  ? require('../src/services/vercel-cache')
+  : require('../src/services/cache');
 
 const app = express();
 
@@ -29,6 +34,12 @@ const RSS_INTERVAL = 30 * 60 * 1000;
 const TAMILBLASTERS_INTERVAL = 10 * 60 * 1000;
 
 async function ensureDataFresh() {
+  // On Vercel, load from external source instead of scraping
+  if (isVercel) {
+    await cacheService.ensureDataLoaded();
+    return;
+  }
+  
   const now = Date.now();
   
   if (now - lastRssScrape > RSS_INTERVAL) {
@@ -219,6 +230,26 @@ app.get('/scrape', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
+});
+
+app.get('/export-cache', (req, res) => {
+  const rssContent = cacheService.getRssContent();
+  const tamilblastersContent = cacheService.getTamilblastersContent();
+  const magnets = cacheService.getAllMagnets();
+  
+  const exportData = {
+    rssContent,
+    tamilblastersContent,
+    magnets,
+    lastUpdate: new Date().toISOString(),
+    stats: {
+      rssItems: rssContent.length,
+      tamilblastersItems: tamilblastersContent.length,
+      totalMagnets: magnets.length,
+    },
+  };
+  
+  res.json(exportData);
 });
 
 module.exports = app;

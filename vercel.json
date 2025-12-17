@@ -11,5 +11,13 @@
       "src": "/(.*)",
       "dest": "/api/index.js"
     }
-  ]
+  ],
+  "env": {
+    "VERCEL": "1"
+  },
+  "functions": {
+    "api/index.js": {
+      "maxDuration": 10
+    }
+  }
 }
