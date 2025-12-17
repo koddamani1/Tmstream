@@ -1,6 +1,7 @@
 const cacheService = require('../services/cache');
 const omdbService = require('../services/omdb');
 const fanartService = require('../services/fanart');
+const torboxService = require('../services/torbox');
 
 function matchesQualityFilter(item, qualities) {
   if (!qualities || qualities.length === 0) return true;
@@ -96,8 +97,49 @@ async function getCatalog(type, id, extra = {}, userConfig = {}) {
   });
   
   const paginatedItems = items.slice(skip, skip + limit);
+  const torboxKey = userConfig.torboxKey;
   
-  const metas = await Promise.all(paginatedItems.map(async (item) => {
+  // Filter items that have TorBox streams available
+  const itemsWithTorbox = [];
+  
+  for (const item of paginatedItems) {
+    if (!item.magnets || item.magnets.length === 0) continue;
+    
+    // Check if any magnet has a TorBox stream
+    let hasTorboxStream = false;
+    
+    for (const magnet of item.magnets.slice(0, 3)) {
+      if (!magnet.hash) continue;
+      
+      try {
+        // Check memory cache first
+        const cached = cacheService.getTorboxStream(magnet.hash);
+        if (cached) {
+          hasTorboxStream = true;
+          break;
+        }
+        
+        // Check if it's cached on TorBox servers
+        if (torboxKey) {
+          const torboxCached = await torboxService.checkTorboxCache(magnet.hash, torboxKey);
+          if (torboxCached) {
+            hasTorboxStream = true;
+            break;
+          }
+        }
+      } catch (err) {
+        // Continue checking other magnets
+      }
+    }
+    
+    if (hasTorboxStream) {
+      itemsWithTorbox.push(item);
+    }
+  }
+  
+  console.log(`[Catalog] Found ${itemsWithTorbox.length}/${paginatedItems.length} items with TorBox streams`);
+  
+  const metas = await Promise.all(itemsWithTorbox.map(async (item) => {
     const internalId = `tamilmv:${Buffer.from(item.title || '').toString('base64').slice(0, 30)}`;
     
     const meta = {
