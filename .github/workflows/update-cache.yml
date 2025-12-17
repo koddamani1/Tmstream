@@ -1,0 +1,65 @@
+name: Update Cache Data
+
+on:
+  schedule:
+    # Run every 6 hours
+    - cron: '0 */6 * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  update-cache:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          
+      - name: Install dependencies
+        run: npm install
+        
+      - name: Run scraping
+        run: |
+          # Start server in background
+          node server.js &
+          SERVER_PID=$!
+          
+          # Wait for server to start
+          sleep 10
+          
+          # Trigger scraping
+          curl -s http://localhost:5000/scrape || true
+          
+          # Wait for scraping to complete
+          sleep 40
+          
+          # Export cache
+          curl -s http://localhost:5000/export-cache > data/cache.json
+          
+          # Stop server
+          kill $SERVER_PID || true
+          
+      - name: Check if cache was updated
+        id: check_changes
+        run: |
+          git diff --quiet data/cache.json || echo "changed=true" >> $GITHUB_OUTPUT
+          
+      - name: Commit and push if changed
+        if: steps.check_changes.outputs.changed == 'true'
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add data/cache.json
+          git commit -m "Auto-update cache data - $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Cache stats
+        run: |
+          echo "Cache updated successfully!"
+          cat data/cache.json | jq '.stats'
